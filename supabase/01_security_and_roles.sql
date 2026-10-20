@@ -125,6 +125,7 @@ CREATE TRIGGER users_guard_role_change
 DO $$
 DECLARE
   t TEXT;
+  pol RECORD;
   -- Farm setup & activity: members read, owner writes.
   operational TEXT[] := ARRAY[
     'farms', 'fields', 'buildings', 'flocks', 'flock_harvesting',
@@ -139,10 +140,17 @@ BEGIN
   FOREACH t IN ARRAY operational || logs || finance || ARRAY['users'] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('REVOKE ALL ON public.%I FROM anon', t);
-    EXECUTE format('DROP POLICY IF EXISTS bd_select ON public.%I', t);
-    EXECUTE format('DROP POLICY IF EXISTS bd_insert ON public.%I', t);
-    EXECUTE format('DROP POLICY IF EXISTS bd_update ON public.%I', t);
-    EXECUTE format('DROP POLICY IF EXISTS bd_delete ON public.%I', t);
+  END LOOP;
+
+  -- Remove EVERY existing policy on these tables, not just ours. Policies are
+  -- OR'ed together, so any leftover "allow all signed-in users" rule (the
+  -- live project had some on users, farms and transactions) would silently
+  -- override the role rules below.
+  FOR pol IN
+    SELECT tablename, policyname FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = ANY (operational || logs || finance || ARRAY['users'])
+  LOOP
+    EXECUTE format('DROP POLICY %I ON public.%I', pol.policyname, pol.tablename);
   END LOOP;
 
   FOREACH t IN ARRAY operational LOOP

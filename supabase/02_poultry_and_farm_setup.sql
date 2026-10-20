@@ -9,7 +9,8 @@
 -- ============================================
 -- The sample data in the original schema could never be inserted: the farm
 -- needs an owner, and no users existed when it ran. Create the farm now
--- that an OWNER exists (only if there is no farm yet).
+-- that an OWNER exists (only if there is no farm yet), and give it starter
+-- fields / buildings if it has none (a farm row may have been added by hand).
 
 DO $$
 DECLARE
@@ -17,27 +18,30 @@ DECLARE
   v_farm  UUID;
 BEGIN
   SELECT farm_id INTO v_farm FROM public.farms LIMIT 1;
-  IF v_farm IS NOT NULL THEN
-    RETURN;
+
+  IF v_farm IS NULL THEN
+    SELECT user_id INTO v_owner FROM public.users WHERE role = 'OWNER' LIMIT 1;
+    IF v_owner IS NULL THEN
+      RAISE EXCEPTION 'No OWNER user yet. Run 01_security_and_roles.sql first.';
+    END IF;
+
+    INSERT INTO public.farms (name, location, total_area_sqm, owner_id)
+    VALUES ('Marondera Farm', 'Marondera, Zimbabwe', 5000, v_owner)
+    RETURNING farm_id INTO v_farm;
   END IF;
 
-  SELECT user_id INTO v_owner FROM public.users WHERE role = 'OWNER' LIMIT 1;
-  IF v_owner IS NULL THEN
-    RAISE EXCEPTION 'No OWNER user yet. Run 01_security_and_roles.sql first.';
+  IF NOT EXISTS (SELECT 1 FROM public.fields WHERE farm_id = v_farm) THEN
+    INSERT INTO public.fields (farm_id, field_name, area_sqm, field_type, irrigation) VALUES
+      (v_farm, 'Greenhouse North', 200, 'GREENHOUSE', 'DRIP'),
+      (v_farm, 'Plot A', 500, 'OPEN_FIELD', 'FLOOD'),
+      (v_farm, 'Nursery', 100, 'NURSERY', 'DRIP');
   END IF;
 
-  INSERT INTO public.farms (name, location, total_area_sqm, owner_id)
-  VALUES ('Marondera Farm', 'Marondera, Zimbabwe', 5000, v_owner)
-  RETURNING farm_id INTO v_farm;
-
-  INSERT INTO public.fields (farm_id, field_name, area_sqm, field_type, irrigation) VALUES
-    (v_farm, 'Greenhouse North', 200, 'GREENHOUSE', 'DRIP'),
-    (v_farm, 'Plot A', 500, 'OPEN_FIELD', 'FLOOD'),
-    (v_farm, 'Nursery', 100, 'NURSERY', 'DRIP');
-
-  INSERT INTO public.buildings (farm_id, building_name, building_type, capacity, climate_controlled) VALUES
-    (v_farm, 'Broiler House 1', 'POULTRY_HOUSE', 500, FALSE),
-    (v_farm, 'Storage Shed', 'STORAGE', 1000, FALSE);
+  IF NOT EXISTS (SELECT 1 FROM public.buildings WHERE farm_id = v_farm) THEN
+    INSERT INTO public.buildings (farm_id, building_name, building_type, capacity, climate_controlled) VALUES
+      (v_farm, 'Broiler House 1', 'POULTRY_HOUSE', 500, FALSE),
+      (v_farm, 'Storage Shed', 'STORAGE', 1000, FALSE);
+  END IF;
 END $$;
 
 -- ============================================
