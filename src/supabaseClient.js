@@ -13,6 +13,18 @@ export const isSupabaseConfigured = Boolean(
   !SUPABASE_KEY.startsWith('your_')
 );
 
+// Invite and password-reset email links land here with "#...&type=invite"
+// (or "type=recovery") in the URL. Read it before the client consumes the hash,
+// so the app can ask the person to choose a password.
+export const arrivedFromEmailLink = (() => {
+  try {
+    const type = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('type');
+    return type === 'invite' || type === 'recovery';
+  } catch {
+    return false;
+  }
+})();
+
 export const supabase = createClient(
   isSupabaseConfigured ? SUPABASE_URL : 'https://placeholder.supabase.co',
   isSupabaseConfigured ? SUPABASE_KEY : 'placeholder'

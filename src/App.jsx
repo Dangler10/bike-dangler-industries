@@ -6,7 +6,7 @@
 // Deploy to Vercel or Netlify with environment variables set.
 
 import React, { useState, useEffect } from 'react';
-import { supabase, isSupabaseConfigured } from './supabaseClient';
+import { supabase, isSupabaseConfigured, arrivedFromEmailLink } from './supabaseClient';
 import { resetFarmCache } from './data';
 import DashboardPage from './pages/DashboardPage';
 import PoultryPage from './pages/PoultryPage';
@@ -15,6 +15,7 @@ import TasksPage from './pages/TasksPage';
 import EquipmentPage from './pages/EquipmentPage';
 import InventoryPage from './pages/InventoryPage';
 import PartnerPage from './pages/PartnerPage';
+import ReportPage from './pages/ReportPage';
 import TeamPage from './pages/TeamPage';
 
 // Pages and which roles can open them. Partner Dashboard shows money,
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { page: 'inventory', icon: '📦', label: 'Inventory', roles: ['OWNER', 'PARTNER', 'WORKER'], Component: InventoryPage },
   { page: 'equipment', icon: '⚙️', label: 'Equipment', roles: ['OWNER', 'PARTNER', 'WORKER'], Component: EquipmentPage },
   { page: 'partner', icon: '👥', label: 'Partner Dashboard', roles: ['OWNER', 'PARTNER'], Component: PartnerPage },
+  { page: 'report', icon: '📄', label: 'Report', roles: ['OWNER', 'PARTNER'], Component: ReportPage },
   { page: 'team', icon: '🔑', label: 'Team', roles: ['OWNER'], Component: TeamPage },
 ];
 
@@ -41,6 +43,7 @@ export default function FurrowApp() {
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [needsPassword, setNeedsPassword] = useState(arrivedFromEmailLink);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -53,6 +56,7 @@ export default function FurrowApp() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       // Ignore token refreshes; only react when who's logged in changes.
       // Deferred: calling Supabase inside this callback can deadlock supabase-js.
+      if (event === 'PASSWORD_RECOVERY') setNeedsPassword(true);
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
         setTimeout(() => loadUser(session?.user || null), 0);
       }
@@ -83,6 +87,7 @@ export default function FurrowApp() {
   const signOut = async () => {
     await supabase.auth.signOut();
     resetFarmCache();
+    setNeedsPassword(false);
     setCurrentPage('dashboard');
     setMenuOpen(false);
   };
@@ -102,6 +107,19 @@ export default function FurrowApp() {
 
   if (!currentUser) {
     return <LoginPage />;
+  }
+
+  if (needsPassword) {
+    return (
+      <SetPasswordPage
+        email={currentUser.email}
+        onSignOut={signOut}
+        onDone={() => {
+          setNeedsPassword(false);
+          window.history.replaceState(null, '', window.location.pathname);
+        }}
+      />
+    );
   }
 
   const role = profile?.role;
@@ -133,7 +151,7 @@ export default function FurrowApp() {
   return (
     <div className="flex flex-col md:flex-row h-screen bg-gray-100">
       {/* Mobile top bar */}
-      <header className="md:hidden bg-green-800 text-white">
+      <header className="md:hidden bg-green-800 text-white no-print">
         <div className="flex items-center justify-between px-4 py-3">
           <h1 className="text-lg font-bold">🚲 Bike Dangler</h1>
           <button
@@ -161,7 +179,7 @@ export default function FurrowApp() {
       </header>
 
       {/* Sidebar Navigation */}
-      <aside className="w-64 bg-green-800 text-white shadow-lg hidden md:flex md:flex-col">
+      <aside className="w-64 bg-green-800 text-white shadow-lg hidden md:flex md:flex-col no-print">
         <div className="p-6 border-b border-green-700">
           <h1 className="text-2xl font-bold">🚲 Bike Dangler</h1>
           <p className="text-green-200 text-sm mt-1">Farm Management</p>
@@ -233,84 +251,121 @@ function NavItem({ icon, label, onClick, active }) {
 // LOGIN PAGE
 // ============================================
 
-// After a successful sign-in the auth listener in FurrowApp takes over.
+// No public sign-up: the owner invites people from Supabase
+// (Authentication → Users → Invite user). After a successful sign-in the
+// auth listener in FurrowApp takes over.
 function LoginPage() {
+  const [mode, setMode] = useState('signin'); // 'signin' | 'forgot'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [message, setMessage] = useState(null); // { tone: 'error' | 'info', text }
 
-  const handleAuth = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setMessage(null);
     setLoading(true);
-
     try {
-      if (isSignUp) {
-        const { data, error } = await supabase.auth.signUp({ email, password });
+      if (mode === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
         if (error) throw error;
-        if (!data.session) setError('Check your email to confirm your account, then sign in.');
+        setMessage({ tone: 'info', text: 'If that email has an account, a link to set a new password is on its way.' });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       }
     } catch (err) {
-      setError(err.message);
+      setMessage({ tone: 'error', text: err.message });
     } finally {
       setLoading(false);
     }
   };
 
+  const inputCls = 'w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent';
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-600 to-green-900 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
         <h1 className="text-4xl font-bold text-center mb-2 text-green-800">🚲 Bike Dangler Industries</h1>
-        <p className="text-center text-gray-600 mb-8">Farm Management System</p>
+        <p className="text-center text-gray-600 mb-8">
+          {mode === 'forgot' ? 'Reset your password' : 'Farm Management System'}
+        </p>
 
-        {error && (
-          <div className={`p-4 rounded mb-6 ${isSignUp ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>
-            {error}
+        {message && (
+          <div className={`p-4 rounded mb-6 ${message.tone === 'info' ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>
+            {message.text}
           </div>
         )}
 
-        <form onSubmit={handleAuth} className="space-y-4">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            required
-          />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input type="email" placeholder="Email" autoComplete="email" value={email}
+            onChange={(e) => setEmail(e.target.value)} className={inputCls} required />
+          {mode === 'signin' && (
+            <input type="password" placeholder="Password" autoComplete="current-password" value={password}
+              onChange={(e) => setPassword(e.target.value)} className={inputCls} required />
+          )}
           <button
             type="submit"
             disabled={loading}
             className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-semibold transition disabled:opacity-50"
           >
-            {loading ? 'Loading...' : (isSignUp ? 'Sign Up' : 'Sign In')}
+            {loading ? 'Please wait...' : mode === 'forgot' ? 'Send reset link' : 'Sign In'}
           </button>
         </form>
 
-        <div className="mt-4 text-center">
+        <div className="mt-4 text-center space-y-2">
           <button
-            onClick={() => {
-              setIsSignUp(!isSignUp);
-              setError('');
-            }}
+            onClick={() => { setMode(mode === 'forgot' ? 'signin' : 'forgot'); setMessage(null); }}
             className="text-green-600 hover:text-green-700 font-semibold"
           >
-            {isSignUp ? 'Already have an account? Sign In' : 'New user? Sign Up'}
+            {mode === 'forgot' ? 'Back to sign in' : 'Forgot password?'}
           </button>
+          <p className="text-sm text-gray-500">Accounts are by invitation only. Ask the farm owner for an invite.</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Shown after following an invite or password-reset email link: the person is
+// signed in by the link but has no (known) password yet.
+function SetPasswordPage({ email, onDone, onSignOut }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (password.length < 8) { setError('Use at least 8 characters.'); return; }
+    if (password !== confirm) { setError("The two passwords don't match."); return; }
+    setSaving(true);
+    setError('');
+    const { error: updError } = await supabase.auth.updateUser({ password });
+    setSaving(false);
+    if (updError) setError(updError.message);
+    else onDone();
+  };
+
+  const inputCls = 'w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent';
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-600 to-green-900 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
+        <h1 className="text-2xl font-bold text-center mb-2 text-green-800">Choose a password</h1>
+        <p className="text-center text-gray-600 mb-6">for <strong>{email}</strong></p>
+        {error && <div className="p-4 rounded mb-6 bg-red-50 text-red-700">{error}</div>}
+        <form onSubmit={save} className="space-y-4">
+          <input type="password" placeholder="New password (8+ characters)" autoComplete="new-password"
+            value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} required />
+          <input type="password" placeholder="Type it again" autoComplete="new-password"
+            value={confirm} onChange={(e) => setConfirm(e.target.value)} className={inputCls} required />
+          <button type="submit" disabled={saving}
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-semibold transition disabled:opacity-50">
+            {saving ? 'Saving...' : 'Save password'}
+          </button>
+        </form>
+        <button onClick={onSignOut} className="w-full mt-4 text-sm text-gray-500 hover:text-gray-700">Sign out</button>
       </div>
     </div>
   );

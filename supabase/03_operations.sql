@@ -8,7 +8,7 @@
 -- 1. PARTNER PROFIT SHARE & ROI
 -- ============================================
 
--- The % of farm profit each partner is owed (DYLAN_PARTNER_SETUP.md: 50/50 by default).
+-- The % of farm profit each partner is owed (docs/archive/DYLAN_PARTNER_SETUP.md: 50/50 by default).
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS profit_share_pct NUMERIC(5,2) DEFAULT 50;
 DO $$
 BEGIN

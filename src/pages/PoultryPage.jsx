@@ -1,12 +1,16 @@
 // ============================================
-// POULTRY PAGE - broiler batches, daily logs, sales
-// Needs supabase/02_poultry_and_farm_setup.sql (flock_summary view,
-// record_flock_harvest function).
+// POULTRY PAGE - broiler batches, daily logs, sales, batch comparison, houses
+// Needs supabase/02 (flock_summary, record_flock_harvest) and
+// supabase/04 (sale dates in flock_summary, delete_harvest).
 // ============================================
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Modal, ErrorBox, Field, FormButtons, inputClass, today, money, addDays, MiniStat } from '../components';
+import { loadFarm } from '../data';
+import {
+  Modal, ErrorBox, Field, FormButtons, inputClass, today, money, addDays, daysBetween, MiniStat,
+  PageHeader, PrimaryButton, SmallButton, Tabs, Empty, Badge,
+} from '../components';
 
 const DEFAULT_GROWOUT_DAYS = 42;
 
@@ -17,13 +21,14 @@ export default function PoultryPage({ currentUser, role }) {
   const canLog = role === 'OWNER' || role === 'WORKER';
   const seesMoney = role === 'OWNER' || role === 'PARTNER';
 
+  const [tab, setTab] = useState('batches');
   const [farmId, setFarmId] = useState(null);
   const [flocks, setFlocks] = useState([]);
-  const [houses, setHouses] = useState([]);
+  const [buildings, setBuildings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [showClosed, setShowClosed] = useState(false);
-  const [modal, setModal] = useState(null); // { type: 'new' | 'log' | 'sale', flock }
+  const [modal, setModal] = useState(null); // { type: 'new' | 'log' | 'sale' | 'house', flock?, house? }
   const [expandedId, setExpandedId] = useState(null);
 
   useEffect(() => {
@@ -33,25 +38,20 @@ export default function PoultryPage({ currentUser, role }) {
   const load = async () => {
     setLoading(true);
     setErrorMsg('');
-
-    const { data: farm, error: farmError } = await supabase
-      .from('farms').select('farm_id').limit(1).maybeSingle();
-    if (farmError || !farm) {
-      setErrorMsg(farmError?.message || 'No farm found yet. Run supabase/02_poultry_and_farm_setup.sql in Supabase.');
-      setLoading(false);
-      return;
+    try {
+      const farm = await loadFarm();
+      setFarmId(farm.farm_id);
+      const [summary, bld] = await Promise.all([
+        supabase.from('flock_summary').select('*').eq('farm_id', farm.farm_id)
+          .order('start_date', { ascending: false }),
+        supabase.from('buildings').select('*').eq('farm_id', farm.farm_id).order('building_name'),
+      ]);
+      if (summary.error) setErrorMsg(summary.error.message);
+      setFlocks(summary.data || []);
+      setBuildings(bld.data || []);
+    } catch (e) {
+      setErrorMsg(e.message);
     }
-    setFarmId(farm.farm_id);
-
-    const [summary, buildings] = await Promise.all([
-      supabase.from('flock_summary').select('*').eq('farm_id', farm.farm_id)
-        .order('start_date', { ascending: false }),
-      supabase.from('buildings').select('building_id, building_name, capacity')
-        .eq('farm_id', farm.farm_id).eq('building_type', 'POULTRY_HOUSE').order('building_name'),
-    ]);
-    if (summary.error) setErrorMsg(summary.error.message);
-    setFlocks(summary.data || []);
-    setHouses(buildings.data || []);
     setLoading(false);
   };
 
@@ -60,6 +60,7 @@ export default function PoultryPage({ currentUser, role }) {
     if (changed) load();
   };
 
+  const houses = buildings.filter((b) => b.building_type === 'POULTRY_HOUSE');
   const active = flocks.filter((f) => f.status === 'ACTIVE' || f.status === 'PLANNED');
   const closed = flocks.filter((f) => f.status === 'HARVESTED' || f.status === 'CULLED');
   const shown = showClosed ? flocks : active;
@@ -68,62 +69,67 @@ export default function PoultryPage({ currentUser, role }) {
 
   return (
     <div className="p-4 md:p-6">
-      <div className="flex flex-wrap gap-3 justify-between items-center mb-6">
-        <h2 className="text-3xl font-bold text-gray-800">Poultry</h2>
-        {isOwner && (
-          <button
-            onClick={() => setModal({ type: 'new' })}
-            disabled={!farmId}
-            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white px-4 py-2 rounded-lg font-semibold transition"
-          >
-            + New Batch
-          </button>
+      <PageHeader title="Poultry">
+        {isOwner && tab === 'batches' && (
+          <PrimaryButton onClick={() => setModal({ type: 'new' })} disabled={!farmId}>+ New Batch</PrimaryButton>
         )}
-      </div>
+        {isOwner && tab === 'houses' && (
+          <PrimaryButton onClick={() => setModal({ type: 'house' })} disabled={!farmId}>+ Add Building</PrimaryButton>
+        )}
+      </PageHeader>
 
       <ErrorBox message={errorMsg} />
+      <Tabs value={tab} onChange={setTab} tabs={[['batches', 'Batches'], ['compare', 'Compare batches'], ['houses', 'Houses']]} />
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-        <MiniStat label="Active batches" value={active.length} />
-        <MiniStat label="Birds on farm" value={birdsOnFarm.toLocaleString()} />
-        <MiniStat
-          label="Not logged today"
-          value={notLoggedToday}
-          tone={notLoggedToday > 0 ? 'warn' : 'ok'}
-        />
-      </div>
+      {loading ? <p className="text-gray-500">Loading...</p> : (
+        <>
+          {tab === 'batches' && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                <MiniStat label="Active batches" value={active.length} />
+                <MiniStat label="Birds on farm" value={birdsOnFarm.toLocaleString()} />
+                <MiniStat label="Not logged today" value={notLoggedToday} tone={notLoggedToday > 0 ? 'warn' : 'ok'} />
+              </div>
 
-      {loading ? (
-        <p className="text-gray-500">Loading...</p>
-      ) : shown.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-6 text-gray-600">
-          No active batches.{isOwner && ' Click "+ New Batch" when the chicks arrive.'}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {shown.map((f) => (
-            <FlockCard
-              key={f.flock_id}
-              flock={f}
-              seesMoney={seesMoney}
-              canLog={canLog}
-              isOwner={isOwner}
-              expanded={expandedId === f.flock_id}
-              onToggle={() => setExpandedId(expandedId === f.flock_id ? null : f.flock_id)}
-              onLog={() => setModal({ type: 'log', flock: f })}
-              onSale={() => setModal({ type: 'sale', flock: f })}
-            />
-          ))}
-        </div>
-      )}
+              {shown.length === 0 ? (
+                <Empty>No active batches.{isOwner && ' Click "+ New Batch" when the chicks arrive.'}</Empty>
+              ) : (
+                <div className="space-y-4">
+                  {shown.map((f) => (
+                    <FlockCard
+                      key={f.flock_id}
+                      flock={f}
+                      seesMoney={seesMoney}
+                      canLog={canLog}
+                      isOwner={isOwner}
+                      expanded={expandedId === f.flock_id}
+                      onToggle={() => setExpandedId(expandedId === f.flock_id ? null : f.flock_id)}
+                      onLog={() => setModal({ type: 'log', flock: f })}
+                      onSale={() => setModal({ type: 'sale', flock: f })}
+                      onChanged={load}
+                    />
+                  ))}
+                </div>
+              )}
 
-      {closed.length > 0 && (
-        <button
-          onClick={() => setShowClosed(!showClosed)}
-          className="mt-6 text-green-700 hover:text-green-800 font-semibold"
-        >
-          {showClosed ? 'Hide finished batches' : `Show finished batches (${closed.length})`}
-        </button>
+              {closed.length > 0 && (
+                <button
+                  onClick={() => setShowClosed(!showClosed)}
+                  className="mt-6 text-green-700 hover:text-green-800 font-semibold"
+                >
+                  {showClosed ? 'Hide finished batches' : `Show finished batches (${closed.length})`}
+                </button>
+              )}
+            </>
+          )}
+
+          {tab === 'compare' && <CompareBatches flocks={flocks} seesMoney={seesMoney} />}
+
+          {tab === 'houses' && (
+            <HousesView buildings={buildings} active={active} isOwner={isOwner}
+              onEdit={(house) => setModal({ type: 'house', house })} />
+          )}
+        </>
       )}
 
       {modal?.type === 'new' && (
@@ -135,7 +141,193 @@ export default function PoultryPage({ currentUser, role }) {
       {modal?.type === 'sale' && (
         <SaleModal flock={modal.flock} onClose={closeModal} />
       )}
+      {modal?.type === 'house' && (
+        <BuildingModal farmId={farmId} house={modal.house} onClose={closeModal} />
+      )}
     </div>
+  );
+}
+
+// ============================================
+// COMPARE BATCHES
+// ============================================
+// FCR = feed eaten (kg) ÷ live weight sold (kg): lower is better.
+
+function batchStats(f) {
+  const sold = Number(f.birds_harvested);
+  const weight = Number(f.total_weight_kg);
+  const feed = Number(f.total_feed_kg);
+  const end = f.last_sale_date || (f.status === 'ACTIVE' ? today() : null);
+  return {
+    days: end ? daysBetween(f.start_date, end) : null,
+    avgWeight: sold > 0 ? weight / sold : null,
+    fcr: weight > 0 && feed > 0 ? feed / weight : null,
+    feedPerBird: f.bird_count > 0 && feed > 0 ? feed / f.bird_count : null,
+    costPerBird: f.bird_count > 0 ? Number(f.expenses) / f.bird_count : null,
+    profitPerBird: f.bird_count > 0 ? Number(f.profit) / f.bird_count : null,
+  };
+}
+
+function CompareBatches({ flocks, seesMoney }) {
+  if (flocks.length === 0) return <Empty>No batches yet.</Empty>;
+  const rows = [...flocks].sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)))
+    .map((f) => ({ f, s: batchStats(f) }));
+  const fmt = (v, digits = 2, suffix = '') => (v == null ? '—' : `${v.toFixed(digits)}${suffix}`);
+  const best = (key, lowerIsBetter) => {
+    const vals = rows.map((r) => r.s[key]).filter((v) => v != null);
+    if (vals.length < 2) return null;
+    return lowerIsBetter ? Math.min(...vals) : Math.max(...vals);
+  };
+  const bestFcr = best('fcr', true);
+  const bestWeight = best('avgWeight', false);
+  const bestProfit = best('profitPerBird', false);
+  const hi = (v, b) => (b != null && v === b ? 'text-green-700 font-bold' : '');
+
+  return (
+    <>
+      <div className="bg-white rounded-lg shadow p-4 overflow-x-auto">
+        <table className="w-full text-sm min-w-[720px]">
+          <thead className="text-left text-gray-500">
+            <tr>
+              <th className="py-2 pr-3">Batch</th>
+              <th className="pr-3">Started</th>
+              <th className="pr-3 text-right">Chicks</th>
+              <th className="pr-3 text-right">Deaths</th>
+              <th className="pr-3 text-right">Days</th>
+              <th className="pr-3 text-right">Feed/bird</th>
+              <th className="pr-3 text-right">Avg weight</th>
+              <th className="pr-3 text-right">FCR</th>
+              {seesMoney && <><th className="pr-3 text-right">Cost/bird</th><th className="pr-3 text-right">Profit/bird</th><th className="text-right">Profit</th></>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ f, s }) => (
+              <tr key={f.flock_id} className="border-t">
+                <td className="py-2 pr-3 font-semibold whitespace-nowrap">
+                  {f.batch_number} {f.status === 'ACTIVE' && <Badge tone="green">growing</Badge>}
+                </td>
+                <td className="pr-3 whitespace-nowrap">{f.start_date}</td>
+                <td className="pr-3 text-right">{f.bird_count}</td>
+                <td className={`pr-3 text-right ${f.mortality_pct >= 5 ? 'text-red-600' : ''}`}>{Number(f.mortality_pct || 0)}%</td>
+                <td className="pr-3 text-right">{s.days ?? '—'}</td>
+                <td className="pr-3 text-right">{fmt(s.feedPerBird, 2, ' kg')}</td>
+                <td className={`pr-3 text-right ${hi(s.avgWeight, bestWeight)}`}>{fmt(s.avgWeight, 2, ' kg')}</td>
+                <td className={`pr-3 text-right ${hi(s.fcr, bestFcr)}`}>{fmt(s.fcr)}</td>
+                {seesMoney && (
+                  <>
+                    <td className="pr-3 text-right">{s.costPerBird == null ? '—' : money(s.costPerBird)}</td>
+                    <td className={`pr-3 text-right ${hi(s.profitPerBird, bestProfit)}`}>{s.profitPerBird == null ? '—' : money(s.profitPerBird)}</td>
+                    <td className={`text-right font-semibold ${Number(f.profit) >= 0 ? '' : 'text-red-600'}`}>{money(f.profit)}</td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-gray-500 mt-3">
+        Days = arrival to last sale (or to today while growing). FCR = kg of feed per kg of bird sold; lower is better
+        (good broilers are around 1.6–1.9). Best value in each column is in green.
+        {seesMoney && ' Costs only include expenses tied to the batch (chicks, feed deliveries, entries marked for it).'}
+      </p>
+    </>
+  );
+}
+
+// ============================================
+// HOUSES / BUILDINGS
+// ============================================
+
+const BUILDING_TYPES = { POULTRY_HOUSE: 'Poultry house', STORAGE: 'Storage', PROCESSING: 'Processing' };
+
+function HousesView({ buildings, active, isOwner, onEdit }) {
+  if (buildings.length === 0) return <Empty>No buildings yet.</Empty>;
+  return (
+    <div className="bg-white rounded-lg shadow divide-y">
+      {buildings.map((b) => {
+        const inHouse = active.filter((f) => f.building_id === b.building_id);
+        const birds = inHouse.reduce((s, f) => s + f.birds_alive, 0);
+        const pct = b.capacity ? Math.round((100 * birds) / b.capacity) : null;
+        return (
+          <div key={b.building_id} className="p-4 flex flex-wrap justify-between items-center gap-3">
+            <div>
+              <p className="font-semibold text-gray-800">{b.building_name}</p>
+              <p className="text-sm text-gray-600">
+                {[BUILDING_TYPES[b.building_type], b.capacity && `holds ${b.capacity}`, b.climate_controlled && 'climate controlled'].filter(Boolean).join(' · ')}
+              </p>
+              {b.building_type === 'POULTRY_HOUSE' && (
+                <p className="text-sm text-gray-500">
+                  {inHouse.length ? `${birds} birds (${inHouse.map((f) => f.batch_number).join(', ')})${pct != null ? ` · ${pct}% full` : ''}` : 'Empty'}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {pct != null && pct > 100 && <Badge tone="red">Over capacity</Badge>}
+              {isOwner && <SmallButton onClick={() => onEdit(b)}>Edit</SmallButton>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function BuildingModal({ farmId, house, onClose }) {
+  const editing = !!house;
+  const [form, setForm] = useState({
+    building_name: house?.building_name || '',
+    building_type: house?.building_type || 'POULTRY_HOUSE',
+    capacity: house?.capacity != null ? String(house.capacity) : '',
+    climate_controlled: !!house?.climate_controlled,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  const save = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    const row = {
+      building_name: form.building_name.trim(),
+      building_type: form.building_type,
+      capacity: form.capacity === '' ? null : parseInt(form.capacity, 10),
+      climate_controlled: form.climate_controlled,
+    };
+    const { error: saveError } = editing
+      ? await supabase.from('buildings').update(row).eq('building_id', house.building_id)
+      : await supabase.from('buildings').insert({ ...row, farm_id: farmId });
+    setSaving(false);
+    if (saveError) setError(saveError.message);
+    else onClose(true);
+  };
+
+  return (
+    <Modal onClose={() => onClose(false)}>
+      <h3 className="text-2xl font-bold mb-4">{editing ? 'Edit Building' : 'Add Building'}</h3>
+      <ErrorBox message={error} />
+      <form onSubmit={save} className="space-y-4">
+        <Field label="Name">
+          <input className={inputClass} placeholder="e.g. Broiler House 2" value={form.building_name} onChange={set('building_name')} required />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Type">
+            <select className={inputClass} value={form.building_type} onChange={set('building_type')}>
+              {Object.entries(BUILDING_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </Field>
+          <Field label="Capacity (birds)">
+            <input className={inputClass} type="number" min="1" value={form.capacity} onChange={set('capacity')} />
+          </Field>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={form.climate_controlled}
+            onChange={(e) => setForm({ ...form, climate_controlled: e.target.checked })} className="w-4 h-4" />
+          Climate controlled (heaters / fans)
+        </label>
+        <FormButtons saving={saving} onCancel={() => onClose(false)} />
+      </form>
+    </Modal>
   );
 }
 
@@ -143,7 +335,7 @@ export default function PoultryPage({ currentUser, role }) {
 // BATCH CARD
 // ============================================
 
-function FlockCard({ flock: f, seesMoney, canLog, isOwner, expanded, onToggle, onLog, onSale }) {
+function FlockCard({ flock: f, seesMoney, canLog, isOwner, expanded, onToggle, onLog, onSale, onChanged }) {
   const isActive = f.status === 'ACTIVE';
   const loggedToday = f.last_log_date === today();
   const daysLeft = f.expected_harvest_date
@@ -214,7 +406,7 @@ function FlockCard({ flock: f, seesMoney, canLog, isOwner, expanded, onToggle, o
         </div>
       </div>
 
-      {expanded && <FlockHistory flockId={f.flock_id} seesMoney={seesMoney} />}
+      {expanded && <FlockHistory flockId={f.flock_id} seesMoney={seesMoney} isOwner={isOwner} onChanged={onChanged} />}
     </div>
   );
 }
@@ -232,10 +424,19 @@ function Figure({ label, value, className = 'text-gray-800' }) {
 // HISTORY (daily logs + sales)
 // ============================================
 
-function FlockHistory({ flockId, seesMoney }) {
+function FlockHistory({ flockId, seesMoney, isOwner, onChanged }) {
   const [logs, setLogs] = useState(null);
   const [sales, setSales] = useState([]);
   const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
+
+  // Removes the sale and its income; a closed batch reopens if birds are left.
+  const deleteSale = async (s) => {
+    if (!window.confirm(`Delete the sale of ${s.birds_harvested} birds on ${s.harvest_date}? Its income is removed too.`)) return;
+    const { error: delError } = await supabase.rpc('delete_harvest', { p_kind: 'flock', p_harvest_id: s.harvest_id });
+    if (delError) setError(delError.message);
+    else { setReload((n) => n + 1); onChanged(); }
+  };
 
   useEffect(() => {
     (async () => {
@@ -251,7 +452,7 @@ function FlockHistory({ flockId, seesMoney }) {
       setLogs(l.data || []);
       setSales(s.data || []);
     })();
-  }, [flockId]);
+  }, [flockId, reload]);
 
   if (!logs) return <p className="px-6 pb-6 text-gray-500">Loading...</p>;
 
@@ -268,7 +469,7 @@ function FlockHistory({ flockId, seesMoney }) {
                 <tr>
                   <th className="py-1 pr-4">Date</th><th className="pr-4">Birds</th><th className="pr-4">Weight</th>
                   <th className="pr-4">Avg</th>{seesMoney && <><th className="pr-4">Price/kg</th><th className="pr-4">Total</th></>}
-                  <th>Buyer</th>
+                  <th>Buyer</th>{isOwner && <th />}
                 </tr>
               </thead>
               <tbody>
@@ -280,6 +481,11 @@ function FlockHistory({ flockId, seesMoney }) {
                     <td className="pr-4">{s.average_weight_kg ? `${Number(s.average_weight_kg)} kg` : '—'}</td>
                     {seesMoney && <><td className="pr-4">{money(s.sale_price_per_kg)}</td><td className="pr-4">{money(s.total_revenue)}</td></>}
                     <td>{s.buyer_name || '—'}</td>
+                    {isOwner && (
+                      <td className="text-right">
+                        <button onClick={() => deleteSale(s)} className="text-xs text-gray-500 hover:text-red-600">Delete</button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

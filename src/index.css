@@ -1,3 +1,11 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Printing (Report page "Print / Save PDF"): only the page content, full height. */
+@media print {
+  .no-print { display: none !important; }
+  html, body, #root, #root > div, main { height: auto !important; overflow: visible !important; display: block !important; background: white !important; }
+  .report section { box-shadow: none; border: 1px solid #e5e7eb; }
+  .break-inside-avoid { break-inside: avoid; }
+}

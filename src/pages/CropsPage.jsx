@@ -114,6 +114,7 @@ export default function CropsPage({ currentUser, role }) {
                       onLog={() => setModal({ type: 'log', p })}
                       onHarvest={() => setModal({ type: 'harvest', p })}
                       onStatus={(s) => setStatus(p, s)}
+                      onChanged={load}
                     />
                   ))}
                 </div>
@@ -171,7 +172,7 @@ export default function CropsPage({ currentUser, role }) {
 // PLANTING CARD + HISTORY
 // ============================================
 
-function PlantingCard({ p, isOwner, canLog, seesMoney, expanded, onToggle, onLog, onHarvest, onStatus }) {
+function PlantingCard({ p, isOwner, canLog, seesMoney, expanded, onToggle, onLog, onHarvest, onStatus, onChanged }) {
   const isActive = ACTIVE.includes(p.current_status);
   const d = p.days_to_harvest;
   return (
@@ -220,7 +221,7 @@ function PlantingCard({ p, isOwner, canLog, seesMoney, expanded, onToggle, onLog
         </div>
         {p.notes && <p className="text-sm text-gray-500 mt-3">{p.notes}</p>}
       </div>
-      {expanded && <PlantingHistory plantingId={p.planting_id} seesMoney={seesMoney} />}
+      {expanded && <PlantingHistory plantingId={p.planting_id} seesMoney={seesMoney} isOwner={isOwner} onChanged={onChanged} />}
     </div>
   );
 }
@@ -234,9 +235,19 @@ function Fig({ label, value, className = 'text-gray-800' }) {
   );
 }
 
-function PlantingHistory({ plantingId, seesMoney }) {
+function PlantingHistory({ plantingId, seesMoney, isOwner, onChanged }) {
   const [logs, setLogs] = useState(null);
   const [harvests, setHarvests] = useState([]);
+  const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
+
+  const deleteHarvest = async (h) => {
+    if (!window.confirm(`Delete the ${Number(h.quantity_harvested_kg)} kg harvest on ${h.harvest_date}? Its income is removed too.`)) return;
+    const { error: delError } = await supabase.rpc('delete_harvest', { p_kind: 'crop', p_harvest_id: h.harvest_id });
+    if (delError) setError(delError.message);
+    else { setReload((n) => n + 1); onChanged(); }
+  };
+
   useEffect(() => {
     Promise.all([
       supabase.from('crop_daily_logs').select('*').eq('planting_id', plantingId).order('log_date', { ascending: false }),
@@ -245,16 +256,17 @@ function PlantingHistory({ plantingId, seesMoney }) {
       setLogs(l.data || []);
       setHarvests(h.data || []);
     });
-  }, [plantingId]);
+  }, [plantingId, reload]);
   if (!logs) return <p className="px-6 pb-4 text-gray-500">Loading...</p>;
   return (
     <div className="border-t px-4 md:px-6 py-4 space-y-6 text-sm">
+      <ErrorBox message={error} />
       {harvests.length > 0 && (
         <div className="overflow-x-auto">
           <h4 className="font-bold mb-2">Harvests</h4>
           <table className="w-full">
             <thead className="text-left text-gray-500">
-              <tr><th className="py-1 pr-4">Date</th><th className="pr-4">Kg</th>{seesMoney && <><th className="pr-4">Price/kg</th><th className="pr-4">Total</th></>}<th>Buyer</th></tr>
+              <tr><th className="py-1 pr-4">Date</th><th className="pr-4">Kg</th>{seesMoney && <><th className="pr-4">Price/kg</th><th className="pr-4">Total</th></>}<th>Buyer</th>{isOwner && <th />}</tr>
             </thead>
             <tbody>
               {harvests.map((h) => (
@@ -263,6 +275,11 @@ function PlantingHistory({ plantingId, seesMoney }) {
                   <td className="pr-4">{Number(h.quantity_harvested_kg)}</td>
                   {seesMoney && <><td className="pr-4">{money(h.market_price_per_kg)}</td><td className="pr-4">{money(h.total_revenue)}</td></>}
                   <td>{h.buyer_name || '—'}</td>
+                  {isOwner && (
+                    <td className="text-right">
+                      <button onClick={() => deleteHarvest(h)} className="text-xs text-gray-500 hover:text-red-600">Delete</button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

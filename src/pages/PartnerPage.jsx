@@ -88,9 +88,14 @@ export default function PartnerPage({ currentUser, role }) {
     if (changed) load();
   };
 
+  // Deleting a sale also removes its harvest record; deleting a delivery
+  // also takes that stock back out (see supabase/04_undo_and_reports.sql).
   const deleteTxn = async (t) => {
-    if (!window.confirm(`Delete "${t.description || t.category || t.transaction_type}" (${money(t.amount)})?`)) return;
-    const { error } = await supabase.from('transactions').delete().eq('transaction_id', t.transaction_id);
+    const extra = t.flock_harvest_id ? '\n\nThis also removes the sale from the batch (birds count as unsold again).'
+      : t.crop_harvest_id ? '\n\nThis also removes the harvest from the crop.'
+        : t.inventory_item_id && t.stock_quantity ? `\n\nThis also takes ${Number(t.stock_quantity)} back out of stock.` : '';
+    if (!window.confirm(`Delete "${t.description || t.category || t.transaction_type}" (${money(t.amount)})?${extra}`)) return;
+    const { error } = await supabase.rpc('delete_transaction', { p_transaction_id: t.transaction_id });
     if (error) setErrorMsg(error.message);
     else load();
   };
