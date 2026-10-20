@@ -10,7 +10,15 @@
 -- The sample data in the original schema could never be inserted: the farm
 -- needs an owner, and no users existed when it ran. Create the farm now
 -- that an OWNER exists (only if there is no farm yet), and give it starter
--- fields / buildings if it has none (a farm row may have been added by hand).
+-- fields / buildings ONCE. setup_flags remembers that, so re-running this
+-- script never brings back starter rows you deleted.
+
+CREATE TABLE IF NOT EXISTS public.setup_flags (
+  flag TEXT PRIMARY KEY,
+  set_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE public.setup_flags ENABLE ROW LEVEL SECURITY;  -- no policies: not readable from the app
+REVOKE ALL ON public.setup_flags FROM anon, authenticated;
 
 DO $$
 DECLARE
@@ -30,17 +38,21 @@ BEGIN
     RETURNING farm_id INTO v_farm;
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM public.fields WHERE farm_id = v_farm) THEN
-    INSERT INTO public.fields (farm_id, field_name, area_sqm, field_type, irrigation) VALUES
-      (v_farm, 'Greenhouse North', 200, 'GREENHOUSE', 'DRIP'),
-      (v_farm, 'Plot A', 500, 'OPEN_FIELD', 'FLOOD'),
-      (v_farm, 'Nursery', 100, 'NURSERY', 'DRIP');
-  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.setup_flags WHERE flag = 'starter_farm_data') THEN
+    IF NOT EXISTS (SELECT 1 FROM public.fields WHERE farm_id = v_farm) THEN
+      INSERT INTO public.fields (farm_id, field_name, area_sqm, field_type, irrigation) VALUES
+        (v_farm, 'Greenhouse North', 200, 'GREENHOUSE', 'DRIP'),
+        (v_farm, 'Plot A', 500, 'OPEN_FIELD', 'FLOOD'),
+        (v_farm, 'Nursery', 100, 'NURSERY', 'DRIP');
+    END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM public.buildings WHERE farm_id = v_farm) THEN
-    INSERT INTO public.buildings (farm_id, building_name, building_type, capacity, climate_controlled) VALUES
-      (v_farm, 'Broiler House 1', 'POULTRY_HOUSE', 500, FALSE),
-      (v_farm, 'Storage Shed', 'STORAGE', 1000, FALSE);
+    IF NOT EXISTS (SELECT 1 FROM public.buildings WHERE farm_id = v_farm) THEN
+      INSERT INTO public.buildings (farm_id, building_name, building_type, capacity, climate_controlled) VALUES
+        (v_farm, 'Broiler House 1', 'POULTRY_HOUSE', 500, FALSE),
+        (v_farm, 'Storage Shed', 'STORAGE', 1000, FALSE);
+    END IF;
+
+    INSERT INTO public.setup_flags (flag) VALUES ('starter_farm_data');
   END IF;
 END $$;
 

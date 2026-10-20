@@ -355,18 +355,26 @@ CREATE INDEX IF NOT EXISTS idx_crop_daily_logs_planting_id ON public.crop_daily_
 CREATE INDEX IF NOT EXISTS idx_crop_harvests_planting_id ON public.crop_harvests(planting_id);
 
 -- Starter crop data from the original schema (its sample block never ran).
-INSERT INTO public.crop_varieties (crop_name, typical_cycle_days, typical_yield_kg_per_sqm)
-SELECT v.* FROM (VALUES ('Green Pepper', 75, 1.5), ('Tsunga', 45, 1.2), ('Cabbage', 90, 2.0))
-  AS v(crop_name, typical_cycle_days, typical_yield_kg_per_sqm)
-WHERE NOT EXISTS (SELECT 1 FROM public.crop_varieties x WHERE x.crop_name = v.crop_name);
+-- Added once only (setup_flags, from script 02), so deleted rows stay deleted.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.setup_flags WHERE flag = 'starter_crop_data') THEN
+    INSERT INTO public.crop_varieties (crop_name, typical_cycle_days, typical_yield_kg_per_sqm)
+    SELECT v.* FROM (VALUES ('Green Pepper', 75, 1.5), ('Tsunga', 45, 1.2), ('Cabbage', 90, 2.0))
+      AS v(crop_name, typical_cycle_days, typical_yield_kg_per_sqm)
+    WHERE NOT EXISTS (SELECT 1 FROM public.crop_varieties x WHERE x.crop_name = v.crop_name);
 
-INSERT INTO public.crop_calendar (farm_id, crop_name, optimal_planting_month, nursery_start_month, nursery_duration_days,
-                                  transplant_month, days_to_harvest, harvest_start_month, expected_yield_kg_per_sqm, peak_season_price_per_kg)
-SELECT f.farm_id, v.* FROM public.farms f
-CROSS JOIN (VALUES ('Green Pepper', 9, 8, 30, 9, 75, 12, 1.5, NULL::NUMERIC), ('Tsunga', 9, 8, 20, 9, 45, 10, 1.2, NULL::NUMERIC))
-  AS v(crop_name, optimal_planting_month, nursery_start_month, nursery_duration_days, transplant_month,
-       days_to_harvest, harvest_start_month, expected_yield_kg_per_sqm, peak_season_price_per_kg)
-WHERE NOT EXISTS (SELECT 1 FROM public.crop_calendar c WHERE c.farm_id = f.farm_id);
+    INSERT INTO public.crop_calendar (farm_id, crop_name, optimal_planting_month, nursery_start_month, nursery_duration_days,
+                                      transplant_month, days_to_harvest, harvest_start_month, expected_yield_kg_per_sqm, peak_season_price_per_kg)
+    SELECT f.farm_id, v.* FROM public.farms f
+    CROSS JOIN (VALUES ('Green Pepper', 9, 8, 30, 9, 75, 12, 1.5, NULL::NUMERIC), ('Tsunga', 9, 8, 20, 9, 45, 10, 1.2, NULL::NUMERIC))
+      AS v(crop_name, optimal_planting_month, nursery_start_month, nursery_duration_days, transplant_month,
+           days_to_harvest, harvest_start_month, expected_yield_kg_per_sqm, peak_season_price_per_kg)
+    WHERE NOT EXISTS (SELECT 1 FROM public.crop_calendar c WHERE c.farm_id = f.farm_id);
+
+    INSERT INTO public.setup_flags (flag) VALUES ('starter_crop_data');
+  END IF;
+END $$;
 
 -- One row per planting with harvest and money totals.
 DROP VIEW IF EXISTS public.planting_summary;

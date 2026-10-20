@@ -21,6 +21,7 @@ after it too.
 | 3 | `02_poultry_and_farm_setup.sql` | Creates the farm (if none), Broiler House 1 and fields; poultry tracking. |
 | 4 | `03_operations.sql` | Partner profit share and ROI, tasks, equipment service, inventory (feed stock follows the poultry log), crops, starter crop calendar. |
 | 5 | `04_undo_and_reports.sql` | Deleting a sale or delivery undoes it everywhere; sale dates for the batch comparison. |
+| 6 (optional) | `05_remove_starter_data.sql` | Removes the guessed starter fields, buildings and crops so you can enter your own. Scripts 02/03 add starter data only once, so it never comes back. |
 
 ## 3. Invite Dylan
 
