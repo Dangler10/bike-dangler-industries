@@ -17,6 +17,7 @@ import InventoryPage from './pages/InventoryPage';
 import PartnerPage from './pages/PartnerPage';
 import ReportPage from './pages/ReportPage';
 import TeamPage from './pages/TeamPage';
+import AuditPage from './pages/AuditPage';
 
 // Pages and which roles can open them. Partner Dashboard shows money,
 // so workers don't get it; the database enforces the same rules.
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
   { page: 'partner', icon: '👥', label: 'Partner Dashboard', roles: ['OWNER', 'PARTNER'], Component: PartnerPage },
   { page: 'report', icon: '📄', label: 'Report', roles: ['OWNER', 'PARTNER'], Component: ReportPage },
   { page: 'team', icon: '🔑', label: 'Team', roles: ['OWNER'], Component: TeamPage },
+  { page: 'audit', icon: '🕘', label: 'Activity log', roles: ['OWNER'], Component: AuditPage },
 ];
 
 // ============================================

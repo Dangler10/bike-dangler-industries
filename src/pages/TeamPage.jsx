@@ -1,5 +1,5 @@
 // ============================================
-// TEAM PAGE (owner only) - approve sign-ups and set roles
+// TEAM PAGE (owners only) - approve people, set roles, investors and profit shares
 // ============================================
 
 import React, { useState, useEffect } from 'react';
@@ -7,7 +7,7 @@ import { supabase } from '../supabaseClient';
 import { ErrorBox } from '../components';
 
 const ROLE_INFO = {
-  OWNER: 'Full access',
+  OWNER: 'Full access (every change is recorded in the Activity log)',
   PARTNER: 'Sees everything incl. finances, changes nothing',
   WORKER: 'Sees farm activity, adds daily logs, no finances',
   PENDING: 'No access until approved',
@@ -27,7 +27,7 @@ export default function TeamPage({ currentUser }) {
     setLoading(true);
     const { data, error } = await supabase
       .from('users')
-      .select('user_id, email, full_name, role, profit_share_pct, created_at')
+      .select('user_id, email, full_name, role, profit_share_pct, is_investor, created_at')
       .order('created_at', { ascending: true });
     if (error) setErrorMsg(error.message);
     else setPeople(data || []);
@@ -60,13 +60,24 @@ export default function TeamPage({ currentUser }) {
     else loadPeople();
   };
 
+  // Investors get a Partner Dashboard card (capital, profit share, ROI), whatever their role.
+  const setInvestor = async (person, isInvestor) => {
+    setSavingId(person.user_id);
+    setErrorMsg('');
+    const { error } = await supabase.from('users').update({ is_investor: isInvestor }).eq('user_id', person.user_id);
+    setSavingId(null);
+    if (error) setErrorMsg(error.message);
+    else loadPeople();
+  };
+
   const pending = people.filter((p) => p.role === 'PENDING');
 
   return (
     <div className="p-4 md:p-6">
       <h2 className="text-3xl font-bold text-gray-800 mb-2">Team</h2>
       <p className="text-gray-600 mb-6">
-        Anyone can sign up, but they see nothing until you give them a role here.
+        New people see nothing until you give them a role here. Tick "Investor" for anyone who put capital in;
+        they get a position card (capital, profit share, return) on the Partner Dashboard.
       </p>
 
       <ErrorBox message={errorMsg} />
@@ -92,7 +103,19 @@ export default function TeamPage({ currentUser }) {
                   {p.full_name && <p className="text-sm text-gray-600 truncate">{p.email}</p>}
                   <p className="text-xs text-gray-500">{ROLE_INFO[p.role]}</p>
                 </div>
-                {p.role === 'PARTNER' && (
+                {p.role !== 'PENDING' && (
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={!!p.is_investor}
+                      disabled={savingId === p.user_id}
+                      onChange={(e) => setInvestor(p, e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    Investor
+                  </label>
+                )}
+                {p.is_investor && p.role !== 'PENDING' && (
                   <label className="flex items-center gap-2 text-sm text-gray-700">
                     Profit share
                     <input
