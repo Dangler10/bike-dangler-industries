@@ -19,13 +19,14 @@ database and logins. Both run on free plans at this size.
 | Equipment | Service schedule; logging a service books the cost and sets the next due date |
 | Partner Dashboard | Capital put in, profit share, ROI, payback estimate, monthly money summary, all transactions |
 | Report | Weekly / monthly summary for the partner, printable or saved as PDF |
-| Team | Approve people, set roles and profit shares |
+| Team | Approve people, set roles, mark investors and set profit shares |
+| Activity log | Every add / change / delete: who, when, before → after (owners only, can't be edited) |
 
 ### Roles
 
 | Role | Can see | Can change |
 |------|---------|------------|
-| OWNER | Everything | Everything |
+| OWNER | Everything, incl. the Activity log | Everything |
 | PARTNER | Everything, incl. money | Nothing |
 | WORKER | Farm activity, no money | Daily logs, task ticks, stock use, services |
 | PENDING | Nothing | Nothing |

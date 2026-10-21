@@ -153,7 +153,7 @@ export default function PartnerPage({ currentUser, role }) {
         <>
           {shownPositions.length === 0 ? (
             <Empty>
-              No partners yet.{isOwner && ' Give someone the PARTNER role on the Team page, then record their capital here.'}
+              No investors yet.{isOwner && ' Tick "Investor" for someone on the Team page, then record their capital here.'}
             </Empty>
           ) : shownPositions.map((p) => {
             const be = breakeven(p);
@@ -161,7 +161,7 @@ export default function PartnerPage({ currentUser, role }) {
               <div key={p.partner_id} className="bg-white rounded-lg shadow p-4 md:p-6 mb-6">
                 <div className="flex flex-wrap justify-between items-baseline gap-2 mb-4">
                   <h3 className="text-xl font-bold">
-                    {role === 'PARTNER' ? 'Your position' : p.partner_name}
+                    {p.partner_id === currentUser.id ? 'Your position' : p.partner_name}
                   </h3>
                   <span className="text-sm text-gray-600">{Number(p.profit_share_pct)}% of farm profit</span>
                 </div>

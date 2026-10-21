@@ -22,6 +22,7 @@ after it too.
 | 4 | `03_operations.sql` | Partner profit share and ROI, tasks, equipment service, inventory (feed stock follows the poultry log), crops, starter crop calendar. |
 | 5 | `04_undo_and_reports.sql` | Deleting a sale or delivery undoes it everywhere; sale dates for the batch comparison. |
 | 6 (optional) | `05_remove_starter_data.sql` | Removes the guessed starter fields, buildings and crops so you can enter your own. Scripts 02/03 add starter data only once, so it never comes back. |
+| 7 | `06_investors_and_audit.sql` | Investor flag (an OWNER can also be an investor with a profit share) and the **audit trail**: every add/change/delete on every table is recorded with who and when, readable by owners on the Activity log page and not editable from the app. |
 
 ## 3. Invite Dylan
 
@@ -45,7 +46,7 @@ the login page.
 
 | Role | Can see | Can change |
 |------|---------|------------|
-| OWNER | Everything | Everything, including roles and profit shares (Team page) |
+| OWNER | Everything, incl. the Activity log | Everything, including roles, investors and profit shares (Team page) |
 | PARTNER | Everything, incl. finances | Nothing |
 | WORKER | Farm activity, no finances | Adds and corrects daily logs, ticks tasks, uses stock, logs services |
 | PENDING | Nothing | Nothing |
