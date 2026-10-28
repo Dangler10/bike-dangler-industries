@@ -5,22 +5,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { loadFarm, loadPeople, personName, loadTasks, tasksForDay, sortTasks } from '../data';
+import { loadFarm, loadPeople, personName, loadTasks, tasksForDay, sortTasks, tasksByDay, toggleTaskDone } from '../data';
+import { MonthCalendar, Agenda, TaskCard, PRIORITY_TONE, timeStr as time } from '../taskViews';
 import {
   Modal, ErrorBox, Field, FormButtons, inputClass, today, addDays, startOfWeek, prettyDate,
   PageHeader, PrimaryButton, SmallButton, Tabs, Badge, Empty, MiniStat,
 } from '../components';
 
-const PRIORITY_TONE = { CRITICAL: 'red', HIGH: 'orange', MEDIUM: 'yellow', LOW: 'green' };
-const PRIORITY_CARD = {
-  CRITICAL: 'border-l-4 border-red-500',
-  HIGH: 'border-l-4 border-orange-400',
-  MEDIUM: 'border-l-4 border-yellow-400',
-  LOW: 'border-l-4 border-green-400',
-};
 const FREQ_LABEL = { DAILY: 'Every day', WEEKLY: 'Every week', MONTHLY: 'Every month', ONCE: 'Once' };
 const TYPES = ['FEEDING', 'WATERING', 'HARVESTING', 'MAINTENANCE', 'HEALTH_CHECK', 'INSPECTION', 'OTHER'];
-const time = (t) => (t ? String(t).slice(0, 5) : '');
 
 export default function TasksPage({ currentUser, role }) {
   const isOwner = role === 'OWNER';
@@ -36,6 +29,8 @@ export default function TasksPage({ currentUser, role }) {
   const t = today();
   const monday = startOfWeek(t);
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  const [month, setMonth] = useState(`${t.slice(0, 7)}-01`);
+  const [selected, setSelected] = useState(t);
 
   useEffect(() => {
     load();
@@ -47,7 +42,7 @@ export default function TasksPage({ currentUser, role }) {
     try {
       const farm = await loadFarm();
       setFarmId(farm.farm_id);
-      const [tasks, ppl] = await Promise.all([loadTasks(farm.farm_id, monday, addDays(monday, 6)), loadPeople()]);
+      const [tasks, ppl] = await Promise.all([loadTasks(farm.farm_id, addDays(monday, -70), addDays(monday, 260)), loadPeople()]);
       setData(tasks);
       setPeople(ppl);
     } catch (e) {
@@ -59,12 +54,22 @@ export default function TasksPage({ currentUser, role }) {
     const key = `${task.reminder_id}|${iso}`;
     setBusyKey(key);
     setErrorMsg('');
-    const { error } = task.log
-      ? await supabase.from('task_logs').delete().eq('task_id', task.log.task_id)
-      : await supabase.from('task_logs').insert({ reminder_id: task.reminder_id, completed_date: iso, completed_by: currentUser.id });
+    const message = await toggleTaskDone(task, iso, currentUser.id);
     setBusyKey(null);
-    if (error) setErrorMsg(error.message);
+    if (message) setErrorMsg(message);
     else load();
+  };
+
+  // Calendar: month navigation (0 = back to today)
+  const shiftMonth = (delta) => {
+    if (delta === 0) {
+      setMonth(`${t.slice(0, 7)}-01`);
+      setSelected(t);
+      return;
+    }
+    const d = new Date(`${month}T00:00:00`);
+    d.setMonth(d.getMonth() + delta);
+    setMonth(`${d.toLocaleDateString('en-CA').slice(0, 7)}-01`);
   };
 
   const closeModal = (changed) => {
@@ -80,7 +85,7 @@ export default function TasksPage({ currentUser, role }) {
         {isOwner && <PrimaryButton onClick={() => setModal({})} disabled={!farmId}>+ Add Task</PrimaryButton>}
       </PageHeader>
       <ErrorBox message={errorMsg} />
-      <Tabs value={tab} onChange={setTab} tabs={[['today', 'Today'], ['week', 'This week'], ['all', 'All tasks']]} />
+      <Tabs value={tab} onChange={setTab} tabs={[['today', 'Today'], ['week', 'This week'], ['calendar', 'Calendar'], ['all', 'All tasks']]} />
 
       {!data ? <p className="text-gray-500">Loading...</p> : (
         <>
@@ -97,8 +102,18 @@ export default function TasksPage({ currentUser, role }) {
               canTick={canTick} busyKey={busyKey} onToggle={toggle}
             />
           )}
+          {tab === 'calendar' && (
+            <>
+              <MonthCalendar month={month} reminders={data.reminders} logFor={data.logFor}
+                selected={selected} onSelect={setSelected} onMonth={shiftMonth} />
+              <DayDetail iso={selected} reminders={data.reminders} logFor={data.logFor}
+                canTick={canTick} busyKey={busyKey} who={who} onToggle={toggle}
+                onEdit={isOwner ? (task) => setModal({ reminder: task }) : null} />
+            </>
+          )}
           {tab === 'all' && (
-            <AllTasks reminders={data.reminders} who={who} isOwner={isOwner} onEdit={(r) => setModal({ reminder: r })} />
+            <AllTasksTab data={data} canTick={canTick} busyKey={busyKey} who={who} isOwner={isOwner}
+              onToggle={toggle} onEdit={(r) => setModal({ reminder: r })} />
           )}
         </>
       )}
@@ -126,29 +141,8 @@ function TodayView({ tasks, canTick, busyKey, who, isOwner, onToggle }) {
       </div>
       <div className="space-y-2">
         {tasks.map((task) => (
-          <div key={task.reminder_id} className={`bg-white rounded-lg shadow p-4 flex items-start gap-3 ${PRIORITY_CARD[task.priority] || ''}`}>
-            <input
-              type="checkbox"
-              checked={!!task.log}
-              disabled={!canTick || busyKey === `${task.reminder_id}|${today()}`}
-              onChange={() => onToggle(task)}
-              className="w-6 h-6 mt-0.5 cursor-pointer shrink-0"
-              aria-label={`Mark ${task.reminder_title} done`}
-            />
-            <div className="flex-1 min-w-0">
-              <p className={`font-semibold ${task.log ? 'line-through text-gray-500' : 'text-gray-800'}`}>{task.reminder_title}</p>
-              <p className="text-sm text-gray-600">
-                {[time(task.due_time), task.location, who(task.assigned_to) && `for ${who(task.assigned_to)}`,
-                  task.estimated_hours && `${Number(task.estimated_hours)} h`].filter(Boolean).join(' · ')}
-              </p>
-              {task.description && <p className="text-sm text-gray-500 mt-1">{task.description}</p>}
-              {task.log && <p className="text-xs text-green-700 mt-1">Done{who(task.log.completed_by) ? ` by ${who(task.log.completed_by)}` : ''}</p>}
-            </div>
-            <div className="flex flex-col items-end gap-1 shrink-0">
-              <Badge tone={PRIORITY_TONE[task.priority]}>{task.priority}</Badge>
-              {task.overdue && !task.log && <Badge tone="red">Overdue since {task.due_date}</Badge>}
-            </div>
-          </div>
+          <TaskCard key={task.reminder_id} task={task} iso={today()} canTick={canTick} who={who}
+            busy={busyKey === `${task.reminder_id}|${today()}`} onToggle={onToggle} />
         ))}
       </div>
     </>
@@ -199,6 +193,47 @@ function WeekView({ days, reminders, logFor, canTick, busyKey, onToggle }) {
           </div>
         ))}
       </div>
+    </>
+  );
+}
+
+// The tasks of one day picked on the calendar.
+function DayDetail({ iso, reminders, logFor, canTick, busyKey, who, onToggle, onEdit }) {
+  const tasks = tasksByDay(reminders, logFor, iso, iso).get(iso) || [];
+  const done = tasks.filter((x) => x.log).length;
+  return (
+    <section>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h3 className="text-xl font-bold text-gray-800">{prettyDate(iso)}{iso === today() && <span className="text-green-700"> · today</span>}</h3>
+        <span className="text-sm text-gray-600">{tasks.length ? `${done} of ${tasks.length} done` : 'nothing planned'}</span>
+      </div>
+      {tasks.length === 0 ? <Empty>Nothing planned for this day.</Empty> : (
+        <div className="space-y-2">
+          {tasks.map((task) => (
+            <TaskCard key={task.reminder_id} task={task} iso={iso} canTick={canTick} who={who}
+              busy={busyKey === `${task.reminder_id}|${iso}`} onToggle={onToggle} onEdit={onEdit} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// "All tasks": by date (weeks > days) or the flat list used to edit / pause tasks.
+function AllTasksTab({ data, canTick, busyKey, who, isOwner, onToggle, onEdit }) {
+  const [view, setView] = useState('date');
+  return (
+    <>
+      <div className="flex gap-2 mb-4">
+        <SmallButton tone={view === 'date' ? 'green' : 'gray'} onClick={() => setView('date')}>By date</SmallButton>
+        <SmallButton tone={view === 'list' ? 'green' : 'gray'} onClick={() => setView('list')}>Manage list</SmallButton>
+      </div>
+      {view === 'date' ? (
+        <Agenda reminders={data.reminders} logFor={data.logFor} canTick={canTick} busyKey={busyKey} who={who}
+          onToggle={onToggle} onEdit={isOwner ? (task) => onEdit(task) : null} />
+      ) : (
+        <AllTasks reminders={data.reminders} who={who} isOwner={isOwner} onEdit={onEdit} />
+      )}
     </>
   );
 }

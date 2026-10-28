@@ -3,7 +3,7 @@
 // ============================================
 
 import { supabase } from './supabaseClient';
-import { today, toDate, addDays } from './components';
+import { today, toDate, addDays, startOfWeek } from './components';
 
 // The app runs a single farm. Cached after the first successful load.
 let farmPromise = null;
@@ -98,6 +98,33 @@ export const sortTasks = (tasks) =>
   [...tasks].sort((a, b) =>
     (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9) ||
     String(a.due_time || '99').localeCompare(String(b.due_time || '99')));
+
+// Every day from fromIso to toIso with that day's tasks (priority/time order).
+// Returns a Map: iso -> tasks[]. Overdue one-offs stay on their own day.
+export function tasksByDay(reminders, logFor, fromIso, toIso) {
+  const out = new Map();
+  for (let d = fromIso; d <= toIso; d = addDays(d, 1)) {
+    out.set(d, sortTasks(tasksForDay(reminders, logFor, d, { carryOverdue: false })));
+  }
+  return out;
+}
+
+// The 7 days (Monday..Sunday) of the week containing iso.
+export const weekDays = (iso) => {
+  const monday = startOfWeek(iso);
+  return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+};
+
+// done / overdue (past and not ticked) / todo (today or later)
+export const taskStatus = (task, iso) => (task.log ? 'done' : iso < today() ? 'overdue' : 'todo');
+
+// Tick or un-tick a task for a day. Returns an error message, or null.
+export async function toggleTaskDone(task, iso, userId) {
+  const { error } = task.log
+    ? await supabase.from('task_logs').delete().eq('task_id', task.log.task_id)
+    : await supabase.from('task_logs').insert({ reminder_id: task.reminder_id, completed_date: iso, completed_by: userId });
+  return error ? error.message : null;
+}
 
 // ---------- equipment ----------
 

@@ -4,14 +4,29 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { loadFarm, loadTasks, tasksForDay, sortTasks, maintenanceStatus } from '../data';
-import { ErrorBox, today, money, MiniStat, Badge } from '../components';
+import { loadFarm, loadTasks, tasksForDay, sortTasks, maintenanceStatus, toggleTaskDone } from '../data';
+import { WeekBoard } from '../taskViews';
+import { ErrorBox, today, addDays, startOfWeek, money, MiniStat, Badge } from '../components';
 
 export default function DashboardPage({ currentUser, role, onNavigate }) {
   const seesMoney = role !== 'WORKER';
   const [d, setD] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const [busyKey, setBusyKey] = useState(null);
   const t = today();
+  const monday = startOfWeek(t);
+  const canTick = role === 'OWNER' || role === 'WORKER';
+
+  // Tick / un-tick a task from the week board, then refresh.
+  const toggleTask = async (task, iso) => {
+    setBusyKey(`${task.reminder_id}|${iso}`);
+    setErrorMsg('');
+    const message = await toggleTaskDone(task, iso, currentUser.id);
+    setBusyKey(null);
+    if (message) setErrorMsg(message);
+    else setReloadKey((k) => k + 1);
+  };
 
   useEffect(() => {
     (async () => {
@@ -23,7 +38,7 @@ export default function DashboardPage({ currentUser, role, onNavigate }) {
           supabase.from('planting_summary').select('*').eq('farm_id', id),
           supabase.from('equipment').select('*').eq('farm_id', id),
           supabase.from('inventory_levels').select('*').eq('farm_id', id),
-          loadTasks(id, t),
+          loadTasks(id, monday, addDays(monday, 6)),
           seesMoney
             ? supabase.from('transactions').select('*').eq('farm_id', id).order('date', { ascending: false }).order('created_at', { ascending: false })
             : Promise.resolve({ data: [] }),
@@ -40,6 +55,7 @@ export default function DashboardPage({ currentUser, role, onNavigate }) {
           plantings: (plantings.data || []),
           equipment: (equipment.data || []).map((e) => ({ ...e, ms: maintenanceStatus(e) })),
           stock: stock.data || [],
+          weekTasks: tasks,
           todayTasks: sortTasks(tasksForDay(tasks.reminders, tasks.logFor, t)),
           txns: txns.data || [],
           flockLogs: flockLogs.data || [],
@@ -49,7 +65,8 @@ export default function DashboardPage({ currentUser, role, onNavigate }) {
         setErrorMsg(e.message);
       }
     })();
-  }, [t, seesMoney]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t, seesMoney, reloadKey]);
 
   const name = currentUser?.email?.split('@')[0];
   if (!d) {
@@ -133,6 +150,16 @@ export default function DashboardPage({ currentUser, role, onNavigate }) {
           </button>
         )}
       </div>
+
+      <WeekBoard
+        monday={monday}
+        reminders={d.weekTasks.reminders}
+        logFor={d.weekTasks.logFor}
+        canTick={canTick}
+        busyKey={busyKey}
+        onToggle={toggleTask}
+        onOpenTasks={() => onNavigate('tasks')}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-lg shadow p-4 md:p-6">
