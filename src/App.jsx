@@ -8,6 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured, arrivedFromEmailLink } from './supabaseClient';
 import { resetFarmCache } from './data';
+import InstallApp from './InstallApp';
 import DashboardPage from './pages/DashboardPage';
 import PoultryPage from './pages/PoultryPage';
 import CropsPage from './pages/CropsPage';
@@ -170,6 +171,7 @@ export default function FurrowApp() {
               <NavItem key={item.page} icon={item.icon} label={item.label}
                 onClick={() => goTo(item.page)} active={page === item.page} />
             ))}
+            <InstallApp className="px-6 py-2" />
             <div className="px-6 py-3 text-sm text-green-200 flex justify-between items-center">
               <span className="truncate">{currentUser.email} · {role}</span>
               <button onClick={signOut} className="ml-3 bg-red-600 px-3 py-1 rounded text-white font-semibold">
@@ -193,6 +195,7 @@ export default function FurrowApp() {
           ))}
         </nav>
         <div className="p-6 border-t border-green-700">
+          <InstallApp className="mb-3" />
           <div className="text-sm mb-3">
             <p className="text-green-200">Logged in as</p>
             <p className="font-semibold truncate">{currentUser.email}</p>
