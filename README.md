@@ -11,8 +11,8 @@ database and logins. Both run on free plans at this size.
 
 | Page | What it does |
 |------|--------------|
-| Dashboard | Today's tasks, birds on farm, crops growing, this month's profit, a "needs attention" list, recent activity |
-| Tasks | Today's checklist, this week's plan (hours per day), daily / weekly / monthly / one-off tasks |
+| Dashboard | A **This week** board (Mon–Sun, every task done / not done, tick from here), birds on farm, crops growing, this month's profit, a "needs attention" list, recent activity |
+| Tasks | Today's checklist, this week's plan, a **month calendar** (weeks as rows, days as cells; tap a day to tick its tasks), every task by date grouped by week and day, daily / weekly / monthly / one-off tasks |
 | Poultry | Batches, daily log (deaths, feed, water), sales, per-batch profit, batch comparison (FCR, weight, profit per bird), houses |
 | Crops | Plantings with daily logs and harvests, crop calendar, fields |
 | Inventory | Feed, seed, fertiliser… deliveries and use, low-stock alerts. Feed in the poultry log comes out of stock automatically |
