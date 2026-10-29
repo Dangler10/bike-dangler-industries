@@ -23,6 +23,7 @@ after it too.
 | 5 | `04_undo_and_reports.sql` | Deleting a sale or delivery undoes it everywhere; sale dates for the batch comparison. |
 | 6 (optional) | `05_remove_starter_data.sql` | Removes the guessed starter fields, buildings and crops so you can enter your own. Scripts 02/03 add starter data only once, so it never comes back. |
 | 7 | `06_investors_and_audit.sql` | Investor flag (an OWNER can also be an investor with a profit share) and the **audit trail**: every add/change/delete on every table is recorded with who and when, readable by owners on the Activity log page and not editable from the app. |
+| 8 | `07_partner_tracking.sql` | "Paid by" on money entries (`transactions.paid_by`) so each partner's personal dashboard can show the costs they paid out of pocket. Links the expenses already entered from the spreadsheet. |
 
 ## 3. Invite Dylan
 
